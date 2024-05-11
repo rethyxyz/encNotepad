@@ -136,7 +136,7 @@ def adjust_font_size(event):
 
 def create_gui():
     global text_area, root, text_font, status_bar
-    rethyxyz.rethyxyz.show_intro("encNotepad")
+    rethyxyz.rethyxyz.show_intro(PROGRAM_TITLE)
     root = tk.Tk()
     root.title(PROGRAM_TITLE)
     root.geometry("400x400")
