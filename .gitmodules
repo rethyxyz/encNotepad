@@ -1,0 +1,3 @@
+[submodule "rethyxyz"]
+	path = rethyxyz
+	url = https://github.com/rethyxyz/rethyxyz
