@@ -3,13 +3,16 @@ from tkinter import filedialog, simpledialog, messagebox, font
 from cryptography.fernet import Fernet, InvalidToken
 import base64
 import os
+import json
 import hashlib
 import rethyxyz.rethyxyz
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+
 PROGRAM_TITLE = "encNotepad"
+LAST_FILE_PATH = "last_file.json"
 
 def generate_key(password: str):
     password_bytes = password.encode('utf-8')
@@ -23,6 +26,15 @@ def generate_key(password: str):
     )
     key = base64.urlsafe_b64encode(kdf.derive(password_bytes))
     return key
+
+def update_status_bar(filename="", content=""):
+    if filename:
+        base_filename = os.path.basename(filename)
+    else:
+        base_filename = "New File"
+    words = len(content.split())
+    characters = len(content)
+    status_bar.config(text=f"{base_filename} - Words: {words}, Characters: {characters}")
 
 def encrypt_text(text: str, password: str):
     key = generate_key(password)
@@ -40,29 +52,40 @@ def decrypt_text(encrypted_text: bytes, password: str):
         messagebox.showerror("Error", "Invalid password or corrupted file.")
         return None
 
+def save_last_file_path(filename):
+    with open(LAST_FILE_PATH, 'w') as file:
+        json.dump({'last_file': filename}, file)
+
+def get_last_file_path():
+    if os.path.exists(LAST_FILE_PATH):
+        with open(LAST_FILE_PATH, 'r') as file:
+            data = json.load(file)
+            return data.get('last_file')
+    return None
+
+def open_last_file():
+    last_file = get_last_file_path()
+    if last_file and os.path.exists(last_file):
+        open_file(root.password, last_file)
+
 def save_file(content: str, password: str, filename=None):
     if not filename:
         filename = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
-        if not filename:
-            return
+    if not filename:
+        return  # Ensure that we exit if no filename is selected
     encrypted_content = encrypt_text(content, password)
     with open(filename, 'wb') as file:
         file.write(encrypted_content)
     update_title(filename)
+    save_last_file_path(filename)
     messagebox.showinfo("Success", "Your note was saved successfully.")
+    root.filename = filename  # Set the filename on the root object
+    root.password = password  # Set the password on the root object
     return filename
 
-def update_status_bar(filename="", content=""):
-    if filename:
-        base_filename = os.path.basename(filename)
-    else:
-        base_filename = "New File"
-    words = len(content.split())
-    characters = len(content)
-    status_bar.config(text=f"{base_filename} - Words: {words}, Characters: {characters}")
-
-def open_file(password: str):
-    filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+def open_file(password: str, filename=""):
+    if not filename:
+        filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
     if not filename:
         return None, None
     with open(filename, 'rb') as file:
@@ -72,6 +95,9 @@ def open_file(password: str):
         text_area.delete("1.0", "end")
         text_area.insert("1.0", content)
         update_title(filename)
+        save_last_file_path(filename)
+        root.filename = filename  # Ensure the filename is set on the root object
+        root.password = password  # Ensure the password is set on the root object
         return filename, password
     return None, None
 
@@ -175,6 +201,15 @@ def create_gui():
 
     status_bar = tk.Label(root, text="Ready", bd=1, relief=tk.SUNKEN, anchor=tk.W, bg=menu_color, fg=menu_text_color)
     status_bar.pack(fill=tk.X, side=tk.BOTTOM)
+
+    # Check for last file and prompt
+    last_file = get_last_file_path()
+    if last_file and os.path.exists(last_file):
+        if messagebox.askyesno("Open Last File", f"Do you want to open the last edited file?\n{last_file}"):
+            root.filename = last_file
+            password = get_password()
+            if password:
+                open_file(password, last_file)
 
     root.config(bg=background_color)
     root.mainloop()
