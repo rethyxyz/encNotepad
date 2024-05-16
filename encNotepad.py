@@ -4,12 +4,10 @@ from cryptography.fernet import Fernet, InvalidToken
 import base64
 import os
 import json
-import hashlib
 import rethyxyz.rethyxyz
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
 
 PROGRAM_TITLE = "encNotepad"
 LAST_FILE_PATH = "last_file.json"
@@ -73,6 +71,7 @@ def save_file(content: str, password: str, filename=None):
         filename = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
     if not filename:
         return  # Ensure that we exit if no filename is selected
+    
     encrypted_content = encrypt_text(content, password)
     with open(filename, 'wb') as file:
         file.write(encrypted_content)
@@ -94,6 +93,7 @@ def open_file(password: str, filename=""):
     if content is not None:
         text_area.delete("1.0", "end")
         text_area.insert("1.0", content)
+        text_area.edit_reset()  # Reset the undo history
         update_title(filename)
         save_last_file_path(filename)
         root.filename = filename  # Ensure the filename is set on the root object
@@ -136,22 +136,6 @@ def save_current_note():
     else:
         messagebox.showerror("Error", "No file is currently open or password is not set.")
 
-def delete_next_word(event=None):
-    cursor_index = text_area.index(tk.INSERT)
-    end_of_next_word = text_area.search(r'\s', cursor_index, regexp=True, stopindex=tk.END)
-    if end_of_next_word == "":
-        end_of_next_word = tk.END
-    else:
-        end_of_next_word = text_area.index(f"{end_of_next_word} - 1 chars")
-    text_area.delete(cursor_index, end_of_next_word)
-
-def delete_previous_word(event=None):
-    words = text_area.get("1.0", "end-1c").split(" ")
-    if words:
-        words.pop()
-        text_area.delete("1.0", "end")
-        text_area.insert("1.0", " ".join(words))
-
 def adjust_font_size(event):
     current_size = text_font.actual("size")
     if event.delta > 0 or event.num == 4:
@@ -165,7 +149,7 @@ def create_gui():
     rethyxyz.rethyxyz.show_intro(PROGRAM_TITLE)
     root = tk.Tk()
     root.title(PROGRAM_TITLE)
-    root.geometry("400x400")
+    root.geometry("800x600")
     root.filename = None
     root.password = None
     if os.path.isfile('encNotepad.ico'):
@@ -177,15 +161,14 @@ def create_gui():
     menu_color = "#555555"
     menu_text_color = "#FFFFFF"
 
-    text_area = tk.Text(root, font=text_font, bg=background_color, fg=text_color, insertbackground=text_color, undo=True)
+    text_area = tk.Text(root, font=text_font, bg=background_color, fg=text_color, insertbackground=text_color, undo=True, maxundo=100)  # Enable undo and set maxundo
     text_area.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
+    text_area.edit_reset()  # Initialize undo history
     text_area.bind("<Control-s>", lambda event: save_current_note())
-    text_area.bind("<Control-BackSpace>", delete_previous_word)
-    text_area.bind("<Control-Delete>", delete_next_word)
-    text_area.bind("<Control-z>", lambda event: text_area.edit_undo())
-    text_area.bind("<Control-y>", lambda event: text_area.edit_redo())
     text_area.bind("<Control-o>", lambda event: open_note())
     text_area.bind("<<Modified>>", lambda event: update_status_bar(root.filename, text_area.get("1.0", "end-1c")))
+    text_area.bind("<Control-z>", lambda event: text_area.edit_undo())  # Bind Ctrl+Z to undo
+    text_area.bind("<Control-y>", lambda event: text_area.edit_redo())  # Bind Ctrl+Y to redo
 
     root.bind("<Control-MouseWheel>", adjust_font_size)
     root.bind("<Control-Button-4>", adjust_font_size)
