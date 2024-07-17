@@ -4,6 +4,8 @@ from cryptography.fernet import Fernet, InvalidToken
 import base64
 import os
 import json
+import subprocess
+import platform
 import rethyxyz.rethyxyz
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -11,6 +13,8 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 PROGRAM_TITLE = "encNotepad"
 LAST_FILE_PATH = "last_file.json"
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".ico")
+VIDEO_EXTENSIONS = (".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".mpeg")
 
 def generate_key(password: str):
     password_bytes = password.encode('utf-8')
@@ -47,7 +51,6 @@ def decrypt_text(encrypted_text: bytes, password: str):
         decrypted_text = cipher.decrypt(encrypted_text).decode('utf-8')
         return decrypted_text
     except InvalidToken:
-        messagebox.showerror("Error", "Invalid password or corrupted file.")
         return None
 
 def save_last_file_path(filename):
@@ -68,7 +71,7 @@ def open_last_file():
 
 def save_file(content: str, password: str, filename=None):
     if not filename:
-        filename = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        filename = filedialog.asksaveasfilename(defaultextension=".encNotepad", filetypes=[("encNotepad files", "*.encNotepad"), ("All files", "*.*")])
     if not filename:
         return  # Ensure that we exit if no filename is selected
     
@@ -84,21 +87,39 @@ def save_file(content: str, password: str, filename=None):
 
 def open_file(password: str, filename=""):
     if not filename:
-        filename = filedialog.askopenfilename(filetypes=[("Text files", "*.txt"), ("All files", "*.*")])
+        filename = filedialog.askopenfilename(filetypes=[("encNotepad files", "*.encNotepad"), ("All files", "*.*")])
     if not filename:
         return None, None
     with open(filename, 'rb') as file:
-        encrypted_content = file.read()
-    content = decrypt_text(encrypted_content, password)
-    if content is not None:
+        content = file.read()
+    # Check if the file is encrypted
+    decrypted_content = decrypt_text(content, password)
+    if decrypted_content is not None:
         text_area.delete("1.0", "end")
-        text_area.insert("1.0", content)
+        text_area.insert("1.0", decrypted_content)
         text_area.edit_reset()  # Reset the undo history
         update_title(filename)
         save_last_file_path(filename)
         root.filename = filename  # Ensure the filename is set on the root object
         root.password = password  # Ensure the password is set on the root object
         return filename, password
+    else:
+        # If decryption fails, check if it's plain text
+        try:
+            content = content.decode('utf-8')
+            convert = messagebox.askyesno("Plain Text File Detected", "The selected file is plain text. Do you want to encrypt it?")
+            if convert:
+                text_area.delete("1.0", "end")
+                text_area.insert("1.0", content)
+                text_area.edit_reset()  # Reset the undo history
+                new_password = get_password(False)
+                if new_password:
+                    save_file(text_area.get("1.0", "end-1c"), new_password, filename)
+                    root.filename = filename
+                    root.password = new_password
+                    return filename, new_password
+        except UnicodeDecodeError:
+            messagebox.showerror("Error", "Invalid password or corrupted file.")
     return None, None
 
 def update_title(filename):
@@ -144,6 +165,29 @@ def adjust_font_size(event):
         new_size = current_size - 1 if current_size > 1 else 1
     text_font.configure(size=new_size)
 
+def normalize_smb_path(path):
+    if path.startswith("//"):
+        return "\\" + path[1:].replace("/", "\\")
+    return path
+
+def open_local_path(event):
+    start, end = text_area.tag_prevrange("highlight", "insert")
+    path = text_area.get(start, end).strip()
+    path = normalize_smb_path(path)  # Normalize SMB path
+    if os.path.exists(path):
+        if os.path.isdir(path):
+            open_path(path)
+        elif os.path.isfile(path) and (path.lower().endswith(IMAGE_EXTENSIONS) or path.lower().endswith(VIDEO_EXTENSIONS)):
+            open_path(path)
+
+def open_path(path):
+    if platform.system() == "Windows":
+        os.startfile(path)
+    elif platform.system() == "Darwin":  # macOS
+        subprocess.call(["open", path])
+    else:  # Linux
+        subprocess.call(["xdg-open", path])
+
 def create_gui():
     global text_area, root, text_font, status_bar
     rethyxyz.rethyxyz.show_intro(PROGRAM_TITLE)
@@ -152,8 +196,16 @@ def create_gui():
     root.geometry("800x600")
     root.filename = None
     root.password = None
-    if os.path.isfile('encNotepad.ico'):
-        root.iconbitmap('encNotepad.ico')
+
+    # Resolve the icon path
+    icon_path = os.path.abspath('encNotepad.ico')
+    if os.path.isfile(icon_path):
+        try:
+            root.iconbitmap(icon_path)
+        except Exception as e:
+            print(f"Failed to set icon: {e}")
+    else:
+        print(f"Icon file not found at path: {icon_path}")
 
     text_font = font.Font(family="Lucida Console", size=10)
     background_color = "#333333"
@@ -171,6 +223,7 @@ def create_gui():
     text_area.bind("<Control-y>", lambda event: text_area.edit_redo())  # Bind Ctrl+Y to redo
 
     root.bind("<Control-MouseWheel>", adjust_font_size)
+    root.bind("<Control-Button-1>", adjust_font_size)  # For Linux
     root.bind("<Control-Button-4>", adjust_font_size)
     root.bind("<Control-Button-5>", adjust_font_size)
 
